@@ -2,10 +2,10 @@
 
 ## Faz 0 — Hazırlık
 - [x] Node.js (LTS), pnpm ve Git kurulumu
-- [ ] PostgreSQL (yerel Docker veya Neon/Supabase)
+- [x] PostgreSQL (yerel: `pnpm db:dev`; üretim için Neon/Supabase Faz 7)
 - [x] Next.js + TypeScript + Tailwind + shadcn/ui projesinin oluşturulması
 - [x] ESLint, Prettier, Vitest, Playwright ayarları
-- [x] Prisma şemasının ilk sürümü ve seed verisi (migration veritabanı kurulunca)
+- [x] Prisma şemasının ilk sürümü ve seed verisi
 
 ## Faz 1 — Temel (MVP çekirdeği)
 - [ ] Kayıt / giriş (Auth.js), galeri (organization) oluşturma

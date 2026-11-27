@@ -1,11 +1,11 @@
 # Galeri CRM — Geliştirme Planı
 
 ## Faz 0 — Hazırlık
-- [ ] Node.js (LTS), pnpm ve Git kurulumu
+- [x] Node.js (LTS), pnpm ve Git kurulumu
 - [ ] PostgreSQL (yerel Docker veya Neon/Supabase)
-- [ ] Next.js + TypeScript + Tailwind + shadcn/ui projesinin oluşturulması
-- [ ] ESLint, Prettier, Vitest, Playwright ayarları
-- [ ] Prisma şemasının ilk sürümü ve seed verisi
+- [x] Next.js + TypeScript + Tailwind + shadcn/ui projesinin oluşturulması
+- [x] ESLint, Prettier, Vitest, Playwright ayarları
+- [x] Prisma şemasının ilk sürümü ve seed verisi (migration veritabanı kurulunca)
 
 ## Faz 1 — Temel (MVP çekirdeği)
 - [ ] Kayıt / giriş (Auth.js), galeri (organization) oluşturma

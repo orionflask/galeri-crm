@@ -1,0 +1,338 @@
+// Galeri CRM — Prisma schema
+//
+// Conventions (see CLAUDE.md §5 "Veritabanı"):
+// - Every model has `id` (cuid), `createdAt`, `updatedAt`.
+// - Every tenant-owned model has `organizationId` with an index on it.
+// - Leads and customers are soft-deleted via `deletedAt`.
+// - Phone numbers are stored normalized in E.164 format (e.g. +905321234567).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ──────────────────────────────────────────────────────────────────
+
+enum Role {
+  OWNER
+  MANAGER
+  SALES
+}
+
+enum SubscriptionPlan {
+  TRIAL
+  STARTER
+  PRO
+}
+
+enum LeadSource {
+  SAHIBINDEN
+  ARABAM
+  INSTAGRAM
+  FACEBOOK
+  WHATSAPP
+  PHONE
+  WEBSITE
+  WALK_IN
+  REFERRAL
+  OTHER
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  APPOINTMENT
+  TEST_DRIVE
+  NEGOTIATION
+  WON
+  LOST
+}
+
+enum LeadTemperature {
+  HOT
+  WARM
+  COLD
+}
+
+enum LostReason {
+  PRICE
+  FOUND_ELSEWHERE
+  NO_RESPONSE
+  FINANCING_REJECTED
+  VEHICLE_SOLD
+  CHANGED_MIND
+  OTHER
+}
+
+enum VehicleStatus {
+  AVAILABLE
+  RESERVED
+  SOLD
+}
+
+enum FuelType {
+  GASOLINE
+  DIESEL
+  LPG
+  HYBRID
+  ELECTRIC
+}
+
+enum Transmission {
+  MANUAL
+  AUTOMATIC
+  SEMI_AUTOMATIC
+}
+
+enum ActivityType {
+  CALL
+  MESSAGE
+  NOTE
+  STATUS_CHANGE
+  ASSIGNMENT
+}
+
+enum TaskStatus {
+  OPEN
+  DONE
+  CANCELLED
+}
+
+// ─── Tenancy & users ────────────────────────────────────────────────────────
+
+model Organization {
+  id          String           @id @default(cuid())
+  name        String
+  slug        String           @unique
+  logoUrl     String?
+  address     String?
+  phone       String?
+  plan        SubscriptionPlan @default(TRIAL)
+  trialEndsAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  users         User[]
+  leads         Lead[]
+  vehicles      Vehicle[]
+  vehiclePhotos VehiclePhoto[]
+  activities    Activity[]
+  tasks         Task[]
+  tradeIns      TradeIn[]
+  customers     Customer[]
+}
+
+model User {
+  id             String    @id @default(cuid())
+  // Nullable until onboarding finishes (e.g. a Google sign-in before the
+  // user creates or joins a gallery). Tenant queries must still filter on it.
+  organizationId String?
+  name           String?
+  email          String    @unique
+  emailVerified  DateTime?
+  image          String?
+  // Null for OAuth-only accounts. Hashing is introduced with Auth.js (Faz 1).
+  passwordHash   String?
+  role           Role      @default(SALES)
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization  Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  assignedLeads Lead[]        @relation("LeadAssignee")
+  assignedTasks Task[]        @relation("TaskAssignee")
+  createdTasks  Task[]        @relation("TaskCreator")
+  activities    Activity[]
+
+  @@index([organizationId])
+}
+
+// ─── Leads ──────────────────────────────────────────────────────────────────
+
+model Lead {
+  id             String          @id @default(cuid())
+  organizationId String
+  fullName       String
+  phone          String // E.164
+  email          String?
+  source         LeadSource
+  // Free-form source detail, e.g. listing URL or campaign name.
+  sourceDetail   String?
+  status         LeadStatus      @default(NEW)
+  temperature    LeadTemperature @default(WARM)
+
+  interestedVehicleId   String?
+  // Used when the vehicle the lead asks about is not in stock.
+  interestedVehicleText String?
+  budget                Decimal? @db.Decimal(12, 2)
+  wantsTradeIn          Boolean  @default(false)
+  wantsFinancing        Boolean  @default(false)
+
+  assignedToId String?
+  customerId   String?
+
+  // Required (enforced in the service layer) when status = LOST.
+  lostReason     LostReason?
+  lostReasonNote String?
+
+  // KVKK: explicit consent / privacy notice acknowledgement.
+  consentGiven       Boolean   @default(false)
+  consentAt          DateTime?
+  consentTextVersion String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  interestedVehicle Vehicle?     @relation(fields: [interestedVehicleId], references: [id], onDelete: SetNull)
+  assignedTo        User?        @relation("LeadAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  customer          Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  activities        Activity[]
+  tasks             Task[]
+  tradeIns          TradeIn[]
+
+  @@index([organizationId])
+  // Duplicate detection looks leads up by phone within a tenant.
+  @@index([organizationId, phone])
+  @@index([organizationId, status])
+  @@index([organizationId, assignedToId])
+}
+
+model Activity {
+  id             String       @id @default(cuid())
+  organizationId String
+  leadId         String
+  userId         String?
+  type           ActivityType
+  body           String?
+  // Structured details, e.g. { from: "NEW", to: "CONTACTED" } for status changes.
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([leadId, createdAt])
+}
+
+model Task {
+  id             String     @id @default(cuid())
+  organizationId String
+  leadId         String
+  assignedToId   String
+  createdById    String?
+  title          String
+  description    String?
+  dueAt          DateTime
+  status         TaskStatus @default(OPEN)
+  completedAt    DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  assignedTo   User         @relation("TaskAssignee", fields: [assignedToId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation("TaskCreator", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([organizationId, assignedToId, status, dueAt])
+}
+
+model TradeIn {
+  id             String        @id @default(cuid())
+  organizationId String
+  leadId         String
+  brand          String
+  model          String
+  year           Int
+  mileage        Int
+  fuelType       FuelType?
+  transmission   Transmission?
+  plate          String?
+  expectedPrice  Decimal?      @db.Decimal(12, 2)
+  offeredPrice   Decimal?      @db.Decimal(12, 2)
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  lead         Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([leadId])
+}
+
+// ─── Stock ──────────────────────────────────────────────────────────────────
+
+model Vehicle {
+  id             String        @id @default(cuid())
+  organizationId String
+  brand          String
+  model          String
+  year           Int
+  mileage        Int
+  fuelType       FuelType
+  transmission   Transmission
+  color          String?
+  plate          String? // e.g. "34 ABC 123"
+  vin            String? // Şasi no
+  price          Decimal       @db.Decimal(12, 2) // TRY
+  status         VehicleStatus @default(AVAILABLE)
+  description    String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization    Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  photos          VehiclePhoto[]
+  interestedLeads Lead[]
+
+  @@unique([organizationId, vin])
+  @@index([organizationId])
+  @@index([organizationId, status])
+}
+
+model VehiclePhoto {
+  id             String   @id @default(cuid())
+  organizationId String
+  vehicleId      String
+  // Object key in S3-compatible storage (not a public URL).
+  storageKey     String
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vehicle      Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@index([vehicleId, sortOrder])
+}
+
+// ─── Customers ──────────────────────────────────────────────────────────────
+
+model Customer {
+  id             String    @id @default(cuid())
+  organizationId String
+  fullName       String
+  phone          String // E.164
+  email          String?
+  address        String?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  deletedAt      DateTime?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leads        Lead[]
+
+  @@index([organizationId])
+  @@index([organizationId, phone])
+}

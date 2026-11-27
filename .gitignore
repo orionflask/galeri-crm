@@ -48,3 +48,5 @@ Thumbs.db
 
 # claude code local settings
 .claude/settings.local.json
+
+/src/generated/prisma
